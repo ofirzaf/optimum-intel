@@ -518,8 +518,8 @@ class Qwen3OpenVINOConfig(TextDecoderWithPositionIdsOnnxConfig):
             common_inputs = super().inputs
             common_inputs.pop("attention_mask", None)
             common_inputs.pop("input_ids", None)
-            common_inputs["inputs_embeds"] = {0: "batch_size", 1: "block_size", 2: "hidden_size"}
-            common_inputs["hidden_states"] = {0: "batch_size", 1: "context_length", 2: "target_hidden_size"}
+            common_inputs["inputs_embeds"] = {0: "batch_size", 1: "block_size"}
+            common_inputs["hidden_states"] = {0: "batch_size", 1: "context_length"}
             common_inputs["position_ids"] = {0: "batch_size", 1: "position_sequence_length"}
             return common_inputs
         if self.task in ["feature-extraction"]:
@@ -537,7 +537,7 @@ class Qwen3OpenVINOConfig(TextDecoderWithPositionIdsOnnxConfig):
             common_outputs = super().outputs
             common_outputs.pop("logits", None)
             return {
-                "last_hidden_state": {0: "batch_size", 1: "draft_sequence_length", 2: "hidden_size"},
+                "last_hidden_state": {0: "batch_size", 1: "draft_sequence_length"},
                 **common_outputs,
             }
         return super().outputs
