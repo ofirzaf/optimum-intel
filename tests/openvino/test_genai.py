@@ -40,6 +40,7 @@ from transformers import (
     set_seed,
 )
 from utils_tests import (
+    DFLASH_MODELS,
     EAGLE3_MODELS,
     EAGLE3_VLM_MODELS,
     F32_CONFIG,
@@ -585,6 +586,70 @@ class Text2SpeechPipelineTestCase(unittest.TestCase):
 
         torch.testing.assert_close(transformers_output, optimum_output, rtol=1e-2, atol=1e-3)
         torch.testing.assert_close(transformers_output, genai_output, rtol=1e-2, atol=1e-3)
+
+
+@pytest.mark.skipif(OPENVINO_DEVICE == "NPU", reason="DFlash test is not yet supported on NPU")
+class LLMPipelineWithDFlashTestCase(unittest.TestCase):
+    GEN_KWARGS = {
+        "max_new_tokens": 10,
+        "min_new_tokens": 10,
+        "do_sample": False,
+        "num_beams": 1,
+    }
+
+    @parameterized.expand(DFLASH_MODELS.items())
+    def test_compare_outputs(self, model_arch, model_pair):
+        if is_transformers_version("<", "4.57"):
+            self.skipTest("DFlash requires transformers >= 4.57")
+        if is_openvino_version("<", "2026.3"):
+            self.skipTest("DFlash requires openvino-genai >= 2026.3")
+
+        draft_model_id, target_model_id = model_pair
+        trust_remote_code = model_arch in REMOTE_CODE_MODELS
+
+        # export main and draft DFlash models and initialize OV LLM pipelines w/o DFlash
+        draft_model_path = Path(self.temp_dir) / "draft_model"
+        main_model_path = Path(self.temp_dir) / "main_model"
+        main_export(
+            model_name_or_path=draft_model_id,
+            task="text-generation-with-past",
+            trust_remote_code=trust_remote_code,
+            convert_tokenizer=False,
+            output=draft_model_path,
+        )
+        main_export(
+            model_name_or_path=target_model_id,
+            task="text-generation-with-past",
+            convert_tokenizer=True,
+            output=main_model_path,
+        )
+
+        prompt = "Paris is the capital of"
+
+        # Phase 1: generate with DFlash speculative decoding
+        ov_draft_model = draft_model(draft_model_path, "CPU")
+        ov_dflash_pipe = LLMPipeline(main_model_path, OPENVINO_DEVICE, draft_model=ov_draft_model, **TEST_CONFIG)
+        genai_dflash_output = str(
+            ov_dflash_pipe.generate(prompt, echo=True, apply_chat_template=False, ignore_eos=True, **self.GEN_KWARGS)
+        )
+        del ov_dflash_pipe
+        del ov_draft_model
+        gc.collect()
+
+        # Phase 2: generate without DFlash
+        ov_pipe = LLMPipeline(main_model_path, OPENVINO_DEVICE, **TEST_CONFIG)
+        genai_output = str(
+            ov_pipe.generate(prompt, echo=True, apply_chat_template=False, ignore_eos=True, **self.GEN_KWARGS)
+        )
+        del ov_pipe
+        gc.collect()
+
+        # assert they are not empty
+        self.assertTrue(genai_dflash_output)
+        self.assertTrue(genai_output)
+
+        # compare outputs
+        self.assertEqual(genai_dflash_output, genai_output)
 
 
 @pytest.mark.skipif(OPENVINO_DEVICE == "NPU", reason="Eagle3 test is not yet supported on NPU")

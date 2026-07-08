@@ -358,6 +358,13 @@ MODEL_NAMES = {
 
 EAGLE3_MODELS = {"qwen3_eagle3": ("AngelSlim/Qwen3-1.7B_eagle3", "Qwen/Qwen3-1.7B")}
 
+DFLASH_MODELS = {
+    "qwen3_dflash": (
+        os.getenv("OV_DFLASH_DRAFT_MODEL_ID", "optimum-intel-internal-testing/tiny-random-qwen3-dflash"),
+        os.getenv("OV_DFLASH_TARGET_MODEL_ID", "optimum-intel-internal-testing/tiny-random-qwen3"),
+    )
+}
+
 # VLM-based Eagle3 draft models (AngelSlim Eagle3LlamaForCausalLM architecture).
 # These use Qwen3-VL MRoPE and target VLM models for speculative decoding.
 # Only used in the decoder test (not genai, since the VLM target needs image-text-to-text export).
@@ -573,6 +580,7 @@ REMOTE_CODE_MODELS = (
     "decilm",
     "minicpm3",
     "deepseek",
+    "qwen3_dflash",
     "qwen3_eagle3",
     "qwen3_vl_eagle3",
     "qwen3_asr",
