@@ -8708,13 +8708,14 @@ def _dflash_attention_mask(
     sliding_window: Optional[int],
     attention_mask: Optional[torch.Tensor] = None,
 ) -> Optional[torch.Tensor]:
-    # No sliding window and no caller mask means an all-zeros (no-op) additive mask.
-    # Return None so SDPA runs maskless (is_causal stays False): the plugin skips the
-    # per-step O(context) mask broadcast. SWA layers and any real mask fall through.
-    if sliding_window is None and attention_mask is None:
-        return None
     q_len = query_states.shape[-2]
     kv_len = key_states.shape[-2]
+    if sliding_window is None:
+        if attention_mask is None:
+            return None
+        # Full-attention layers only need the caller's padding mask. Avoid building
+        # and adding an all-zero [batch, 1, q_len, kv_len] mask.
+        return attention_mask[:, :, :, -kv_len:]
     device = query_states.device
     dtype = query_states.dtype
     full_mask = torch.zeros((q_len, kv_len), dtype=dtype, device=device)
@@ -8941,6 +8942,10 @@ class Qwen3DFlashDraftModel(Qwen3PreTrainedModel):
                 past_seen_tokens + target_hidden.shape[1] + noise_states.shape[1],
                 device=noise_states.device,
             )
+        if attention_mask is not None and attention_mask.dim() == 2:
+            attention_mask = (1.0 - attention_mask[:, None, None, :].to(dtype=noise_states.dtype)) * torch.finfo(
+                noise_states.dtype
+            ).min
         position_embeddings = self.rotary_emb(noise_states, position_ids)
         for layer in self.layers:
             noise_states = layer(

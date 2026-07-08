@@ -421,54 +421,6 @@ class Qwen2MoEOpenVINOConfig(TextDecoderWithPositionIdsOnnxConfig):
     _MODEL_PATCHER = Qwen2MoEPatcher
 
 
-class DFlashDummyInputGenerator(DummyInputGenerator):
-    SUPPORTED_INPUT_NAMES = ("inputs_embeds", "hidden_states", "position_ids")
-
-    def __init__(
-        self,
-        task: str,
-        normalized_config: NormalizedTextConfig,
-        batch_size: int = DEFAULT_DUMMY_SHAPES["batch_size"],
-        sequence_length: int = DEFAULT_DUMMY_SHAPES["sequence_length"],
-        **kwargs,
-    ):
-        self.batch_size = batch_size
-        self.context_length = sequence_length
-        self.hidden_size = normalized_config.hidden_size
-        config = normalized_config.config
-        self.block_size = getattr(config, "block_size", sequence_length)
-        dflash_config = getattr(config, "dflash_config", {})
-        self.num_target_layers = len(dflash_config.get("target_layer_ids", []))
-        self.vocab_size = getattr(config, "vocab_size", normalized_config.vocab_size)
-
-    def generate(self, input_name: str, framework: str = "pt", int_dtype: str = "int64", float_dtype: str = "fp32"):
-        if input_name == "inputs_embeds":
-            return self.random_float_tensor(
-                [self.batch_size, self.block_size, self.hidden_size],
-                framework=framework,
-                dtype=float_dtype,
-            )
-        if input_name == "hidden_states":
-            return self.random_float_tensor(
-                [self.batch_size, self.context_length, self.hidden_size * self.num_target_layers],
-                framework=framework,
-                dtype=float_dtype,
-            )
-        if input_name == "position_ids":
-            position_length = self.context_length + self.block_size
-            if framework == "pt":
-                return torch.arange(position_length, dtype=DTYPE_MAPPER.pt(int_dtype)).unsqueeze(0).repeat(
-                    self.batch_size, 1
-                )
-            return self.random_int_tensor(
-                [self.batch_size, position_length],
-                max_value=position_length,
-                framework=framework,
-                dtype=int_dtype,
-            )
-        raise ValueError(f"Unsupported DFlash input name: {input_name}")
-
-
 @register_in_tasks_manager(
     "qwen3",
     *[
@@ -509,18 +461,31 @@ class Qwen3OpenVINOConfig(TextDecoderWithPositionIdsOnnxConfig):
         archs = getattr(config, "architectures", None)
         self.dflash = isinstance(archs, list) and len(archs) > 0 and archs[0] == "DFlashDraftModel"
         if self.dflash:
-            self.DUMMY_INPUT_GENERATOR_CLASSES = (DFlashDummyInputGenerator, GemmaDummyPastKeyValuesGenerator)
+            dflash_config = getattr(config, "dflash_config", {}) or {}
+            if not dflash_config.get("target_layer_ids", []):
+                raise ValueError("DFlash export requires non-empty dflash_config['target_layer_ids'].")
+            self.DUMMY_INPUT_GENERATOR_CLASSES = (
+                DummyTextInputGenerator,
+                Eagle3VLMDummyGenerator,
+                Eagle3DummyGenerator,
+                GemmaDummyPastKeyValuesGenerator,
+            )
             self.MIN_TRANSFORMERS_VERSION = "4.57.0"
+            self.PAD_ATTENTION_MASK_TO_PAST = False
 
     @property
     def inputs(self) -> Dict[str, Dict[int, str]]:
         if self.dflash:
             common_inputs = super().inputs
-            common_inputs.pop("attention_mask", None)
             common_inputs.pop("input_ids", None)
             common_inputs["inputs_embeds"] = {0: "batch_size", 1: "block_size"}
             common_inputs["hidden_states"] = {0: "batch_size", 1: "context_length"}
-            common_inputs["position_ids"] = {0: "batch_size", 1: "position_sequence_length"}
+            common_inputs["position_ids"] = {0: "batch_size", 1: "context_length + block_size"}
+            if self.use_past_in_inputs:
+                mask_length = "past_sequence_length + context_length + block_size"
+            else:
+                mask_length = "context_length + block_size"
+            common_inputs["attention_mask"] = {0: "batch_size", 1: mask_length}
             return common_inputs
         if self.task in ["feature-extraction"]:
             common_inputs = {
@@ -541,6 +506,30 @@ class Qwen3OpenVINOConfig(TextDecoderWithPositionIdsOnnxConfig):
                 **common_outputs,
             }
         return super().outputs
+
+    def overwrite_shape_and_generate_input(
+        self, dummy_input_gen: DummyInputGenerator, input_name: str, framework: str, input_shapes: dict
+    ):
+        if self.dflash and input_name in {"inputs_embeds", "hidden_states", "position_ids", "attention_mask"}:
+            sequence_length = dummy_input_gen.sequence_length
+            if input_name in {"inputs_embeds", "position_ids", "attention_mask"}:
+                block_length = sequence_length + 1
+            else:
+                block_length = sequence_length
+            if input_name == "inputs_embeds":
+                dummy_input_gen.sequence_length = block_length
+            elif input_name == "hidden_states":
+                dummy_input_gen.sequence_length = sequence_length
+            elif input_name == "position_ids":
+                dummy_input_gen.sequence_length = sequence_length + block_length
+            else:
+                dummy_input_gen.sequence_length = sequence_length * 2 + block_length
+            dummy_input = dummy_input_gen.generate(
+                input_name, framework=framework, int_dtype=self.int_dtype, float_dtype=self.float_dtype
+            )
+            dummy_input_gen.sequence_length = sequence_length
+            return dummy_input
+        return super().overwrite_shape_and_generate_input(dummy_input_gen, input_name, framework, input_shapes)
 
     def add_past_key_values(self, inputs_or_outputs: Dict[str, Dict[int, str]], direction: str):
         super().add_past_key_values(inputs_or_outputs, direction)
@@ -908,13 +897,15 @@ class Eagle3DummyGenerator(DummyInputGenerator):
         self.batch_size = batch_size
         self.sequence_length = sequence_length
         self.hidden_size = normalized_config.hidden_size
+        dflash_config = getattr(normalized_config.config, "dflash_config", {}) or {}
+        self.num_hidden_state_layers = len(dflash_config.get("target_layer_ids", [])) or 3
 
     def generate(self, input_name: str, framework: str = "pt", int_dtype: str = "int64", float_dtype: str = "fp32"):
-        # hidden_states is provided as a concatenation of three hidden-layer outputs from the main model
+        # hidden_states is provided as a concatenation of hidden-layer outputs from the main model.
         shape = (
             self.batch_size,
             self.sequence_length,
-            self.hidden_size * 3,
+            self.hidden_size * self.num_hidden_state_layers,
         )
         return self.random_float_tensor(shape, framework=framework, dtype=float_dtype)
 
