@@ -461,9 +461,14 @@ class Qwen3OpenVINOConfig(TextDecoderWithPositionIdsOnnxConfig):
         archs = getattr(config, "architectures", None)
         self.dflash = isinstance(archs, list) and len(archs) > 0 and archs[0] == "DFlashDraftModel"
         if self.dflash:
+            model_type = getattr(config, "model_type", "")
+            if model_type != "qwen3":
+                raise ValueError(f"DFlash export supports only Qwen3-based draft models, got model_type={model_type!r}.")
             dflash_config = getattr(config, "dflash_config", {}) or {}
             if not dflash_config.get("target_layer_ids", []):
                 raise ValueError("DFlash export requires non-empty dflash_config['target_layer_ids'].")
+            # DFlash draft checkpoints still advertise model_type="qwen3"; the
+            # architecture and dflash_config fields identify the draft variant.
             self.DUMMY_INPUT_GENERATOR_CLASSES = (
                 DummyTextInputGenerator,
                 Eagle3VLMDummyGenerator,
