@@ -588,26 +588,31 @@ class Text2SpeechPipelineTestCase(unittest.TestCase):
         torch.testing.assert_close(transformers_output, genai_output, rtol=1e-2, atol=1e-3)
 
 
-@pytest.mark.skipif(OPENVINO_DEVICE == "NPU", reason="DFlash test is not yet supported on NPU")
-class LLMPipelineWithDFlashTestCase(unittest.TestCase):
+@pytest.mark.skipif(OPENVINO_DEVICE == "NPU", reason="Speculative decoding tests are not yet supported on NPU")
+class LLMPipelineWithSpeculativeDecodingTestCase(unittest.TestCase):
     GEN_KWARGS = {
         "max_new_tokens": 10,
         "min_new_tokens": 10,
         "do_sample": False,
         "num_beams": 1,
     }
+    SPECULATIVE_DECODING_MODELS = [
+        (model_arch, model_pair, "Eagle3", "4.54", "2026.0") for model_arch, model_pair in EAGLE3_MODELS.items()
+    ] + [
+        (model_arch, model_pair, "DFlash", "4.57", "2026.3") for model_arch, model_pair in DFLASH_MODELS.items()
+    ]
 
-    @parameterized.expand(DFLASH_MODELS.items())
-    def test_compare_outputs(self, model_arch, model_pair):
-        if is_transformers_version("<", "4.57"):
-            self.skipTest("DFlash requires transformers >= 4.57")
-        if is_openvino_version("<", "2026.3"):
-            self.skipTest("DFlash requires openvino-genai >= 2026.3")
+    @parameterized.expand(SPECULATIVE_DECODING_MODELS)
+    def test_compare_outputs(self, model_arch, model_pair, speculative_decoding_type, min_transformers_version, min_openvino_version):
+        if is_transformers_version("<", min_transformers_version):
+            self.skipTest(f"{speculative_decoding_type} requires transformers >= {min_transformers_version}")
+        if is_openvino_version("<", min_openvino_version):
+            self.skipTest(f"{speculative_decoding_type} requires openvino-genai >= {min_openvino_version}")
 
         draft_model_id, target_model_id = model_pair
         trust_remote_code = model_arch in REMOTE_CODE_MODELS
 
-        # export main and draft DFlash models and initialize OV LLM pipelines w/o DFlash
+        # export main and draft models and initialize OV LLM pipelines w/o speculative decoding
         draft_model_path = Path(self.temp_dir) / "draft_model"
         main_model_path = Path(self.temp_dir) / "main_model"
         main_export(
@@ -626,17 +631,17 @@ class LLMPipelineWithDFlashTestCase(unittest.TestCase):
 
         prompt = "Paris is the capital of"
 
-        # Phase 1: generate with DFlash speculative decoding
+        # Phase 1: generate with speculative decoding
         ov_draft_model = draft_model(draft_model_path, "CPU")
-        ov_dflash_pipe = LLMPipeline(main_model_path, OPENVINO_DEVICE, draft_model=ov_draft_model, **TEST_CONFIG)
-        genai_dflash_output = str(
-            ov_dflash_pipe.generate(prompt, echo=True, apply_chat_template=False, ignore_eos=True, **self.GEN_KWARGS)
+        ov_speculative_pipe = LLMPipeline(main_model_path, OPENVINO_DEVICE, draft_model=ov_draft_model, **TEST_CONFIG)
+        genai_speculative_output = str(
+            ov_speculative_pipe.generate(prompt, echo=True, apply_chat_template=False, ignore_eos=True, **self.GEN_KWARGS)
         )
-        del ov_dflash_pipe
+        del ov_speculative_pipe
         del ov_draft_model
         gc.collect()
 
-        # Phase 2: generate without DFlash
+        # Phase 2: generate without speculative decoding
         ov_pipe = LLMPipeline(main_model_path, OPENVINO_DEVICE, **TEST_CONFIG)
         genai_output = str(
             ov_pipe.generate(prompt, echo=True, apply_chat_template=False, ignore_eos=True, **self.GEN_KWARGS)
@@ -645,75 +650,11 @@ class LLMPipelineWithDFlashTestCase(unittest.TestCase):
         gc.collect()
 
         # assert they are not empty
-        self.assertTrue(genai_dflash_output)
+        self.assertTrue(genai_speculative_output)
         self.assertTrue(genai_output)
 
         # compare outputs
-        self.assertEqual(genai_dflash_output, genai_output)
-
-
-@pytest.mark.skipif(OPENVINO_DEVICE == "NPU", reason="Eagle3 test is not yet supported on NPU")
-class LLMPipelineWithEagle3TestCase(unittest.TestCase):
-    GEN_KWARGS = {
-        "max_new_tokens": 10,
-        "min_new_tokens": 10,
-        "do_sample": False,
-        "num_beams": 1,
-    }
-
-    @parameterized.expand(EAGLE3_MODELS.items())
-    def test_compare_outputs(self, model_arch, model_pair):
-        if is_transformers_version("<", "4.54"):
-            self.skipTest("Eagle3 requires transformers >= 4.54")
-        if is_openvino_version("<", "2026.0"):
-            self.skipTest("Eagle3 requires openvino-genai >= 2026.0")
-
-        draft_model_id, target_model_id = model_pair
-        trust_remote_code = model_arch in REMOTE_CODE_MODELS
-
-        # export main and draft eagle3 models and initialize OV LLM pipelines w/o Eagle3
-        draft_model_path = Path(self.temp_dir) / "draft_model"
-        main_model_path = Path(self.temp_dir) / "main_model"
-        main_export(
-            model_name_or_path=draft_model_id,
-            task="text-generation-with-past",
-            trust_remote_code=trust_remote_code,
-            convert_tokenizer=False,
-            output=draft_model_path,
-        )
-        main_export(
-            model_name_or_path=target_model_id,
-            task="text-generation-with-past",
-            convert_tokenizer=True,
-            output=main_model_path,
-        )
-
-        prompt = "Paris is the capital of"
-
-        # Phase 1: generate with Eagle3 speculative decoding
-        ov_draft_model = draft_model(draft_model_path, "CPU")
-        ov_eagle3_pipe = LLMPipeline(main_model_path, OPENVINO_DEVICE, draft_model=ov_draft_model, **TEST_CONFIG)
-        genai_eagle3_output = str(
-            ov_eagle3_pipe.generate(prompt, echo=True, apply_chat_template=False, ignore_eos=True, **self.GEN_KWARGS)
-        )
-        del ov_eagle3_pipe
-        del ov_draft_model
-        gc.collect()
-
-        # Phase 2: generate without Eagle3
-        ov_pipe = LLMPipeline(main_model_path, OPENVINO_DEVICE, **TEST_CONFIG)
-        genai_output = str(
-            ov_pipe.generate(prompt, echo=True, apply_chat_template=False, ignore_eos=True, **self.GEN_KWARGS)
-        )
-        del ov_pipe
-        gc.collect()
-
-        # assert they are not empty
-        self.assertTrue(genai_eagle3_output)
-        self.assertTrue(genai_output)
-
-        # compare outputs
-        self.assertEqual(genai_eagle3_output, genai_output)
+        self.assertEqual(genai_speculative_output, genai_output)
 
     @parameterized.expand(EAGLE3_VLM_MODELS.items())
     def test_compare_outputs_vlm(self, model_arch, model_pair):

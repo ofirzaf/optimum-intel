@@ -360,8 +360,8 @@ EAGLE3_MODELS = {"qwen3_eagle3": ("AngelSlim/Qwen3-1.7B_eagle3", "Qwen/Qwen3-1.7
 
 DFLASH_MODELS = {
     "qwen3_dflash": (
-        os.getenv("OV_DFLASH_DRAFT_MODEL_ID", "optimum-intel-internal-testing/tiny-random-qwen3-dflash"),
-        os.getenv("OV_DFLASH_TARGET_MODEL_ID", "optimum-intel-internal-testing/tiny-random-qwen3"),
+        "optimum-intel-internal-testing/tiny-random-qwen3-dflash",
+        "optimum-intel-internal-testing/tiny-random-qwen3",
     )
 }
 
