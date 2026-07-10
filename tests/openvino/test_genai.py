@@ -597,15 +597,30 @@ class LLMPipelineWithSpeculativeDecodingTestCase(unittest.TestCase):
         "num_beams": 1,
     }
     SPECULATIVE_DECODING_MODELS = [
-        (model_arch, model_pair, "Eagle3", "4.54", "2026.0") for model_arch, model_pair in EAGLE3_MODELS.items()
+        (model_arch, model_pair, "Eagle3", "4.54", None, "2026.0")
+        for model_arch, model_pair in EAGLE3_MODELS.items()
     ] + [
-        (model_arch, model_pair, "DFlash", "4.57", "2026.3") for model_arch, model_pair in DFLASH_MODELS.items()
+        (model_arch, model_pair, "DFlash", "4.57", "4.58", "2026.3")
+        for model_arch, model_pair in DFLASH_MODELS.items()
     ]
 
     @parameterized.expand(SPECULATIVE_DECODING_MODELS)
-    def test_compare_outputs(self, model_arch, model_pair, speculative_decoding_type, min_transformers_version, min_openvino_version):
-        if is_transformers_version("<", min_transformers_version):
-            self.skipTest(f"{speculative_decoding_type} requires transformers >= {min_transformers_version}")
+    def test_compare_outputs(
+        self,
+        model_arch,
+        model_pair,
+        speculative_decoding_type,
+        min_transformers_version,
+        max_transformers_version,
+        min_openvino_version,
+    ):
+        if is_transformers_version("<", min_transformers_version) or (
+            max_transformers_version is not None and is_transformers_version(">=", max_transformers_version)
+        ):
+            version_requirement = f">= {min_transformers_version}"
+            if max_transformers_version is not None:
+                version_requirement += f" and < {max_transformers_version}"
+            self.skipTest(f"{speculative_decoding_type} requires transformers {version_requirement}")
         if is_openvino_version("<", min_openvino_version):
             self.skipTest(f"{speculative_decoding_type} requires openvino-genai >= {min_openvino_version}")
 
