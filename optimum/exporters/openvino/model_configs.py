@@ -489,7 +489,10 @@ class Qwen3OpenVINOConfig(TextDecoderWithPositionIdsOpenVINOConfig):
             elif input_name == "position_ids":
                 dummy_input_gen.sequence_length = sequence_length + block_length
             else:
-                dummy_input_gen.sequence_length = sequence_length * 2 + block_length
+                if self.use_past_in_inputs:
+                    dummy_input_gen.sequence_length = sequence_length * 2 + block_length
+                else:
+                    dummy_input_gen.sequence_length = sequence_length + block_length
             dummy_input = dummy_input_gen.generate(
                 input_name, framework=framework, int_dtype=self.int_dtype, float_dtype=self.float_dtype
             )
