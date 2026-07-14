@@ -112,13 +112,6 @@ else:
     def qwen3_rotate_half(*args, **kwargs):
         raise ImportError("DFlash export requires transformers >= 4.57.")
 
-if is_transformers_version(">=", "4.56"):
-    import transformers.masking_utils
-if is_transformers_version(">=", "4.57"):
-    from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLTextRotaryEmbedding
-if is_transformers_version(">=", "5"):
-    from transformers.modeling_rope_utils import RotaryEmbeddingConfigMixin
-
 if TYPE_CHECKING:
     from transformers.cache_utils import Cache
     from transformers.modeling_utils import PreTrainedModel
