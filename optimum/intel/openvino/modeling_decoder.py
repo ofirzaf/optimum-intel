@@ -571,11 +571,10 @@ class OVModelForCausalLM(OVBaseDecoderModel, GenerationMixin):
         if "hidden_states" in self.input_names:
             hidden_states = kwargs.get("hidden_states", None)
             if hidden_states is None:
-                dflash_config = getattr(self.config, "dflash_config", None)
-                if dflash_config is not None:
+                architectures = getattr(self.config, "architectures", ())
+                if isinstance(architectures, (list, tuple)) and bool(architectures) and (architectures[0] == "DFlashDraftModel"):
                     raise ValueError("DFlash draft models require `hidden_states` to be passed to the forward call.")
-                else:
-                    hidden_size = self.config.hidden_size * 3
+                hidden_size = self.config.hidden_size * 3
                 hs_shape = (batch_size, input_ids.shape[1], hidden_size)
                 hidden_states = torch.zeros(hs_shape, device=self.device, dtype=torch.float32)
             inputs["hidden_states"] = hidden_states
