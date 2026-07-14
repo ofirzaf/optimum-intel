@@ -28,6 +28,7 @@ from transformers import (
 )
 from utils_tests import (
     _ARCHITECTURES_TO_EXPECTED_INT8,
+    HUB_MODEL_NAMES,
     MODEL_NAMES,
     OPENVINO_DEVICE,
     REMOTE_CODE_MODELS,
@@ -40,6 +41,7 @@ from utils_tests import (
 from optimum.exporters.openvino.__main__ import main_export
 from optimum.exporters.openvino.utils import COMPLEX_CHAT_TEMPLATES
 from optimum.intel import (  # noqa
+    OVFlux2KleinPipeline,
     OVFluxFillPipeline,
     OVFluxPipeline,
     OVLatentConsistencyModelPipeline,
@@ -75,6 +77,7 @@ from optimum.intel.openvino.configuration import (
 from optimum.intel.openvino.utils import _HEAD_TO_AUTOMODELS, TemporaryDirectory
 from optimum.intel.utils.import_utils import (
     compare_versions,
+    is_diffusers_version,
     is_openvino_tokenizers_available,
     is_openvino_version,
     is_transformers_version,
@@ -117,10 +120,24 @@ class OVCLIExportTestCase(unittest.TestCase):
         ("text-to-audio", "kokoro"),
     ]
 
+    if is_diffusers_version(">=", "0.37.0"):
+        SUPPORTED_ARCHITECTURES.extend(
+            [
+                ("text-to-image", "flux.2-klein"),
+            ]
+        )
+
     if is_transformers_version(">=", "4.48.0"):
         SUPPORTED_ARCHITECTURES.extend(
             [
                 ("text-generation-with-past", "cohere2"),
+            ]
+        )
+
+    if is_transformers_version(">=", "4.57"):
+        SUPPORTED_ARCHITECTURES.extend(
+            [
+                ("feature-extraction", "qwen3_vl_embedding"),
             ]
         )
 
@@ -163,6 +180,7 @@ class OVCLIExportTestCase(unittest.TestCase):
         SUPPORTED_ARCHITECTURES.extend(
             [
                 ("text-generation-with-past", "granitemoehybrid"),
+                ("text-generation-with-past", "smollm3"),
             ]
         )
 
@@ -209,6 +227,7 @@ class OVCLIExportTestCase(unittest.TestCase):
         "stable-diffusion-xl": 4,
         "stable-diffusion-3": 6,
         "flux": 4,
+        "flux.2-klein": 2,
         "flux-fill": 4,
         "lfm2": 2
         if is_openvino_version(">=", "2026.0")
@@ -228,7 +247,9 @@ class OVCLIExportTestCase(unittest.TestCase):
         "exaone4": 2,
         "bitnet": 2,
         "granitemoehybrid": 2,
+        "smollm3": 2,
         "qwen3_vl_eagle3": 0,
+        "qwen3_vl_embedding": 2,
     }
 
     TOKENIZER_CHAT_TEMPLATE_TESTS_MODELS = {
@@ -317,13 +338,13 @@ class OVCLIExportTestCase(unittest.TestCase):
             "whisper",
             "int8",
             "--dataset librispeech --num-samples 1 --smooth-quant-alpha 0.9 --trust-remote-code",
-            {"encoder": 14, "decoder": 22, "decoder_with_past": 22}
+            {"encoder": 26, "decoder": 22, "decoder_with_past": 22}
             if is_transformers_version("<=", "4.45")
-            else {"encoder": 14, "decoder": 22, "decoder_with_past": 25},
+            else {"encoder": 26, "decoder": 22, "decoder_with_past": 25},
             (
-                {"encoder": {"int8": 14}, "decoder": {"int8": 22}, "decoder_with_past": {"int8": 17}}
+                {"encoder": {"int8": 26}, "decoder": {"int8": 22}, "decoder_with_past": {"int8": 17}}
                 if is_transformers_version("<=", "4.45")
-                else {"encoder": {"int8": 14}, "decoder": {"int8": 22}, "decoder_with_past": {"int8": 18}}
+                else {"encoder": {"int8": 26}, "decoder": {"int8": 22}, "decoder_with_past": {"int8": 18}}
             ),
         ),
         (
@@ -331,13 +352,13 @@ class OVCLIExportTestCase(unittest.TestCase):
             "whisper",
             "f8e4m3",
             "--dataset librispeech --num-samples 1 --smooth-quant-alpha 0.9 --trust-remote-code",
-            {"encoder": 16, "decoder": 26, "decoder_with_past": 23}
+            {"encoder": 30, "decoder": 26, "decoder_with_past": 23}
             if is_transformers_version("<=", "4.45")
-            else {"encoder": 16, "decoder": 26, "decoder_with_past": 25},
+            else {"encoder": 30, "decoder": 26, "decoder_with_past": 25},
             (
-                {"encoder": {"f8e4m3": 14}, "decoder": {"f8e4m3": 22}, "decoder_with_past": {"f8e4m3": 17}}
+                {"encoder": {"f8e4m3": 26}, "decoder": {"f8e4m3": 22}, "decoder_with_past": {"f8e4m3": 17}}
                 if is_transformers_version("<=", "4.45")
-                else {"encoder": {"f8e4m3": 14}, "decoder": {"f8e4m3": 22}, "decoder_with_past": {"f8e4m3": 18}}
+                else {"encoder": {"f8e4m3": 26}, "decoder": {"f8e4m3": 22}, "decoder_with_past": {"f8e4m3": 18}}
             ),
         ),
         (
@@ -543,7 +564,7 @@ class OVCLIExportTestCase(unittest.TestCase):
                 "image-text-to-text",
                 "internvl_chat",
                 "f8e4m3",
-                "--dataset contextual --num-samples 1 --trust-remote-code",
+                "--dataset textvqa --num-samples 1 --trust-remote-code",
                 {
                     "lm_model": 15,
                     "text_embeddings_model": 0,
@@ -657,7 +678,7 @@ class OVCLIExportTestCase(unittest.TestCase):
             "image-text-to-text",
             "llava_next",
             'int4 --group-size 16 --ratio 0.8 --sensitivity-metric "hessian_input_activation" '
-            "--dataset contextual --num-samples 1",
+            "--dataset textvqa --num-samples 1",
             {
                 "lm_model": {"int8": 6, "int4": 24},
                 "text_embeddings_model": {"int8": 1},
@@ -678,7 +699,7 @@ class OVCLIExportTestCase(unittest.TestCase):
             "image-text-to-text",
             "llava-qwen2",
             'int4 --group-size 8 --ratio 0.8 --sensitivity-metric "mean_activation_variance" '
-            "--dataset contextual --num-samples 1 --trust-remote-code",
+            "--dataset textvqa --num-samples 1 --trust-remote-code",
             {
                 "lm_model": {"int8": 16, "int4": 14},
                 "text_embeddings_model": {"int8": 1},
@@ -689,7 +710,7 @@ class OVCLIExportTestCase(unittest.TestCase):
             "image-text-to-text",
             "llava_next_video",
             'int4 --group-size 16 --ratio 0.8 --sensitivity-metric "hessian_input_activation" '
-            "--dataset contextual --num-samples 1",
+            "--dataset textvqa --num-samples 1",
             {
                 "lm_model": {"int8": 6, "int4": 24},
                 "text_embeddings_model": {"int8": 1},
@@ -713,7 +734,7 @@ class OVCLIExportTestCase(unittest.TestCase):
             "image-text-to-text",
             "minicpmv",
             'int4 --group-size 4 --ratio 0.8 --sensitivity-metric "mean_activation_magnitude" '
-            "--dataset contextual --num-samples 1 --trust-remote-code",
+            "--dataset textvqa --num-samples 1 --trust-remote-code",
             {
                 "lm_model": {"int8": 8, "int4": 22},
                 "text_embeddings_model": {"int8": 1},
@@ -735,7 +756,7 @@ class OVCLIExportTestCase(unittest.TestCase):
             "image-text-to-text",
             "internvl_chat",
             'int4 --group-size 4 --ratio 0.8 --sensitivity-metric "mean_activation_magnitude" '
-            "--dataset contextual --num-samples 1 --trust-remote-code",
+            "--dataset textvqa --num-samples 1 --trust-remote-code",
             {
                 "lm_model": {"int8": 8, "int4": 22},
                 "text_embeddings_model": {"int8": 1},
@@ -746,7 +767,7 @@ class OVCLIExportTestCase(unittest.TestCase):
             "image-text-to-text",
             "qwen2_vl",
             'int4 --group-size 16 --ratio 0.8 --sensitivity-metric "mean_activation_magnitude" '
-            "--dataset contextual --num-samples 1",
+            "--dataset textvqa --num-samples 1",
             {
                 "lm_model": {"int8": 10, "int4": 20},
                 "text_embeddings_model": {"int8": 1},
@@ -758,7 +779,7 @@ class OVCLIExportTestCase(unittest.TestCase):
             "image-text-to-text",
             "qwen3_vl",
             'int4 --group-size 8 --ratio 0.8 --sensitivity-metric "mean_activation_magnitude" '
-            "--dataset contextual --num-samples 1",
+            "--dataset textvqa --num-samples 1",
             {
                 "lm_model": {"int8": 12, "int4": 18},
                 "text_embeddings_model": {"int8": 1},
@@ -782,7 +803,7 @@ class OVCLIExportTestCase(unittest.TestCase):
             "image-text-to-text",
             "phi3_v",
             'int4 --group-size 4 --ratio 0.8 --sensitivity-metric "mean_activation_magnitude" '
-            "--dataset contextual --num-samples 1 --trust-remote-code",
+            "--dataset textvqa --num-samples 1 --trust-remote-code",
             {
                 "lm_model": {"int8": 4, "int4": 14},
                 "text_embeddings_model": {"int8": 1},
@@ -794,7 +815,7 @@ class OVCLIExportTestCase(unittest.TestCase):
             "image-text-to-text",
             "qwen2_5_vl",
             'int4 --group-size 16 --ratio 0.8 --sensitivity-metric "mean_activation_magnitude" '
-            "--dataset contextual --num-samples 1 --trust-remote-code",
+            "--dataset textvqa --num-samples 1 --trust-remote-code",
             {
                 "lm_model": {"int8": 10, "int4": 20}
                 if is_transformers_version(">=", "4.54")
@@ -808,7 +829,7 @@ class OVCLIExportTestCase(unittest.TestCase):
             "image-text-to-text",
             "phi4mm",
             'int4 --group-size 8 --ratio 0.8 --sensitivity-metric "mean_activation_magnitude" '
-            "--dataset contextual --num-samples 1 --trust-remote-code",
+            "--dataset textvqa --num-samples 1 --trust-remote-code",
             {
                 "lm_model": {"int8": 8, "int4": 42},
                 "text_embeddings_model": {"int8": 1},
@@ -824,10 +845,12 @@ class OVCLIExportTestCase(unittest.TestCase):
         (
             "image-text-to-text",
             "llama4",
-            "int4 --group-size 16 --ratio 0.8 --dataset contextual --num-samples 1 "
+            "int4 --group-size 16 --ratio 0.8 --dataset textvqa --num-samples 1 "
             '--sensitivity-metric "mean_activation_magnitude"',
             {
-                "lm_model": {"int8": 46, "int4": 56},
+                "lm_model": {"int8": 50, "int4": 52}
+                if is_transformers_version(">=", "4.57")
+                else {"int8": 46, "int4": 56},
                 "text_embeddings_model": {"int8": 1},
                 "vision_embeddings_model": {"int8": 16},
             },
@@ -836,7 +859,7 @@ class OVCLIExportTestCase(unittest.TestCase):
             "image-text-to-text",
             "minicpmo",
             'int4 --group-size 4 --ratio 0.8 --sensitivity-metric "mean_activation_magnitude" '
-            "--dataset contextual --num-samples 1 --trust-remote-code",
+            "--dataset textvqa --num-samples 1 --trust-remote-code",
             {
                 "lm_model": {"int8": 6, "int4": 10},
                 "text_embeddings_model": {"int8": 1},
@@ -1168,7 +1191,7 @@ class OVCLIExportTestCase(unittest.TestCase):
     ):
         with TemporaryDirectory() as tmpdir:
             subprocess.run(
-                f"optimum-cli export openvino --model {MODEL_NAMES[model_type]} --dataset laion/filtered-wit --weight-format int8 {tmpdir}",
+                f"optimum-cli export openvino --model {HUB_MODEL_NAMES[model_type]} --dataset laion/filtered-wit --weight-format int8 {tmpdir}",
                 shell=True,
                 check=True,
             )

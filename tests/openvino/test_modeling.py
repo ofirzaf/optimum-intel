@@ -56,7 +56,15 @@ from transformers import (
 )
 from transformers.testing_utils import slow
 from transformers.utils import http_user_agent
-from utils_tests import F32_CONFIG, MODEL_NAMES, OPENVINO_DEVICE, SEED, TENSOR_ALIAS_TO_TYPE, TEST_IMAGE_URL
+from utils_tests import (
+    F32_CONFIG,
+    HUB_MODEL_NAMES,
+    MODEL_NAMES,
+    OPENVINO_DEVICE,
+    SEED,
+    TENSOR_ALIAS_TO_TYPE,
+    TEST_IMAGE_URL,
+)
 
 from optimum.intel import (
     OVDiffusionPipeline,
@@ -628,7 +636,7 @@ class OVModelIntegrationTest(unittest.TestCase):
     @parameterized.expand(("stable-diffusion", "stable-diffusion-openvino"))
     def test_find_files_matching_pattern_sd(self, model_arch):
         pattern = r"(.*)?openvino(.*)?\_model(.*)?.xml$"
-        model_id = MODEL_NAMES[model_arch]
+        model_id = HUB_MODEL_NAMES[model_arch]
         # hub model
         ov_files = _find_files_matching_pattern(model_id, pattern=pattern)
         self.assertTrue(len(ov_files) > 0 if "openvino" in model_id else len(ov_files) == 0)
@@ -1037,6 +1045,9 @@ class OVModelForFeatureExtractionIntegrationTest(unittest.TestCase):
         "sentence-transformers-bert",
     )
 
+    if is_transformers_version(">=", "4.57"):
+        SUPPORTED_ARCHITECTURES += ("qwen3_vl_embedding",)
+
     if is_transformers_version(">=", "4.51.0"):
         SUPPORTED_ARCHITECTURES += ("qwen3",)
 
@@ -1054,7 +1065,12 @@ class OVModelForFeatureExtractionIntegrationTest(unittest.TestCase):
         tokens = tokenizer(inputs, return_tensors="pt")
         with torch.no_grad():
             transformers_outputs = transformers_model(**tokens)
-        for input_type in ["pt", "np"]:
+
+        input_types = ["pt", "np"]
+        # Original PyTorch Qwen3-VL-Embedding model fails to infer with numpy inputs
+        if model_arch in ["qwen3_vl_embedding"]:
+            input_types = ["pt"]
+        for input_type in input_types:
             tokens = tokenizer(inputs, return_tensors=input_type)
             ov_outputs = ov_model(**tokens)
             self.assertIn("last_hidden_state", ov_outputs)
@@ -1098,6 +1114,10 @@ class OVModelForFeatureExtractionIntegrationTest(unittest.TestCase):
         from Sentence Transformers then an appropriate exception raises.
         """
         model_id = MODEL_NAMES[model_arch]
+        if model_arch in ["qwen3_vl_embedding"]:
+            self.skipTest(
+                "Qwen3-VL-Embedding requires support of sentence-transformers==5.4 and as OVSentenceTransformer is planned to be deprecated, support of this interface won't be added for new models."
+            )
         with TemporaryDirectory() as tmp_dir:
             save_dir = str(tmp_dir)
             OVSentenceTransformer.from_pretrained(model_id, export=True, device=OPENVINO_DEVICE).save_pretrained(
@@ -1618,8 +1638,8 @@ class OVModelForCustomTasksIntegrationTest(unittest.TestCase):
 
 
 class OVModelForOpenCLIPZeroShortImageClassificationTest(unittest.TestCase):
-    OV_MODEL_ID = MODEL_NAMES["open-clip"]
-    OV_MODEL_ID_IR = MODEL_NAMES["open-clip-ov"]
+    OV_MODEL_ID = HUB_MODEL_NAMES["open-clip"]
+    OV_MODEL_ID_IR = HUB_MODEL_NAMES["open-clip-ov"]
 
     def _get_sample_image(self):
         url = TEST_IMAGE_URL

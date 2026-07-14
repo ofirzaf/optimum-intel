@@ -90,6 +90,7 @@ from utils_tests import (
     get_supported_model_for_library,
     TEST_NAME_TO_MODEL_TYPE,
     OPENVINO_DEVICE,
+    HUB_MODEL_NAMES,
 )
 
 _TASK_TO_DATASET = {
@@ -367,7 +368,7 @@ class OVQuantizerTest(unittest.TestCase):
             "qwen2_vl",
             OVQuantizationConfig(
                 bits=8,
-                dataset="contextual",
+                dataset="textvqa",
                 num_samples=1,
             ),
             {
@@ -389,7 +390,7 @@ class OVQuantizerTest(unittest.TestCase):
             OVMixedQuantizationConfig(
                 weight_quantization_config=OVWeightQuantizationConfig(bits=4, group_size=16, ratio=0.7),
                 full_quantization_config=OVQuantizationConfig(dtype="f8e4m3", smooth_quant_alpha=0.9),
-                dataset="contextual",
+                dataset="textvqa",
                 num_samples=1,
             ),
             {
@@ -402,7 +403,7 @@ class OVQuantizerTest(unittest.TestCase):
                 "lm_model": {"f8e4m3": 8, "int4": 14},
                 "text_embeddings_model": {"int8": 1},
                 "vision_embeddings_model": {"f8e4m3": 1},
-                "vision_embeddings_merger_model": {"f8e4m3": 2, "int4": 16},
+                "vision_embeddings_merger_model": {"f8e4m3": 5, "int4": 10},
             },
         ),
     ]
@@ -415,7 +416,7 @@ class OVQuantizerTest(unittest.TestCase):
                     "qwen3_vl",
                     OVQuantizationConfig(
                         bits=8,
-                        dataset="contextual",
+                        dataset="textvqa",
                         num_samples=1,
                     ),
                     {
@@ -797,7 +798,7 @@ class OVWeightCompressionTest(unittest.TestCase):
             dict(
                 bits=4,
                 group_size=16,
-                dataset="contextual",
+                dataset="textvqa",
                 ratio=0.8,
                 sensitivity_metric="hessian_input_activation",
                 num_samples=1,
@@ -816,7 +817,7 @@ class OVWeightCompressionTest(unittest.TestCase):
             dict(
                 bits=4,
                 group_size=8,
-                dataset="contextual",
+                dataset="textvqa",
                 ratio=0.8,
                 sensitivity_metric="mean_activation_variance",
                 num_samples=1,
@@ -836,7 +837,7 @@ class OVWeightCompressionTest(unittest.TestCase):
             dict(
                 bits=4,
                 group_size=16,
-                dataset="contextual",
+                dataset="textvqa",
                 ratio=0.8,
                 sensitivity_metric="hessian_input_activation",
                 num_samples=1,
@@ -857,7 +858,7 @@ class OVWeightCompressionTest(unittest.TestCase):
             dict(
                 bits=4,
                 group_size=16,
-                dataset="contextual",
+                dataset="textvqa",
                 ratio=0.8,
                 sensitivity_metric="mean_activation_magnitude",
                 num_samples=1,
@@ -877,7 +878,7 @@ class OVWeightCompressionTest(unittest.TestCase):
             dict(
                 bits=4,
                 group_size=4,
-                dataset="contextual",
+                dataset="textvqa",
                 ratio=0.8,
                 sensitivity_metric="mean_activation_magnitude",
                 num_samples=1,
@@ -895,7 +896,7 @@ class OVWeightCompressionTest(unittest.TestCase):
             dict(
                 bits=4,
                 group_size=16,
-                dataset="contextual",
+                dataset="textvqa",
                 ratio=0.8,
                 sensitivity_metric="mean_activation_magnitude",
                 num_samples=1,
@@ -914,7 +915,7 @@ class OVWeightCompressionTest(unittest.TestCase):
             dict(
                 bits=4,
                 group_size=8,
-                dataset="contextual",
+                dataset="textvqa",
                 ratio=0.8,
                 sensitivity_metric="mean_activation_magnitude",
                 num_samples=1,
@@ -934,7 +935,7 @@ class OVWeightCompressionTest(unittest.TestCase):
             dict(
                 bits=4,
                 group_size=16,
-                dataset="contextual",
+                dataset="textvqa",
                 ratio=0.8,
                 sensitivity_metric="mean_activation_magnitude",
                 num_samples=1,
@@ -953,7 +954,7 @@ class OVWeightCompressionTest(unittest.TestCase):
             dict(
                 bits=4,
                 group_size=16,
-                dataset="contextual",
+                dataset="textvqa",
                 ratio=0.8,
                 sensitivity_metric="mean_activation_magnitude",
                 num_samples=1,
@@ -972,13 +973,15 @@ class OVWeightCompressionTest(unittest.TestCase):
             dict(
                 bits=4,
                 group_size=16,
-                dataset="contextual",
+                dataset="textvqa",
                 ratio=0.8,
                 sensitivity_metric="mean_activation_magnitude",
                 num_samples=1,
             ),
             {
-                "lm_model": {"int8": 46, "int4": 56},
+                "lm_model": {"int8": 50, "int4": 52}
+                if is_transformers_version(">=", "4.57")
+                else {"int8": 46, "int4": 56},
                 "text_embeddings_model": {"int8": 1},
                 "vision_embeddings_model": {"int8": 16},
             },
@@ -990,7 +993,7 @@ class OVWeightCompressionTest(unittest.TestCase):
             dict(
                 bits=4,
                 group_size=4,
-                dataset="contextual",
+                dataset="textvqa",
                 ratio=0.8,
                 sensitivity_metric="mean_activation_magnitude",
                 num_samples=1,
@@ -1074,12 +1077,25 @@ class OVWeightCompressionTest(unittest.TestCase):
     if is_transformers_version(">=", "4.48.0"):
         SUPPORTED_ARCHITECTURES_WITH_AUTO_COMPRESSION.append((OVModelForCausalLM, "cohere2", False))
 
+    # gemma3n openvino>=2026.2.0 bequse it needs erfinv operation,
+    # quantization tests will be moved to openvino==2026.2.0 in CVS-189051
+    if is_transformers_version(">=", "5.0") and is_openvino_version(">=", "2026.2.0"):
+        SUPPORTED_ARCHITECTURES_WITH_AUTO_COMPRESSION.append((OVModelForVisualCausalLM, "gemma3n", False))
+
+    if is_transformers_version(">=", "4.53.0"):
+        SUPPORTED_ARCHITECTURES_WITH_AUTO_COMPRESSION.append((OVModelForCausalLM, "smollm3", False))
+
     if is_transformers_version(">=", "4.54.0") and is_transformers_version("<", "5"):
         SUPPORTED_ARCHITECTURES_WITH_AUTO_COMPRESSION.append((OVModelForCausalLM, "exaone4", True))
 
     if is_transformers_version(">=", "4.57.0"):
         SUPPORTED_ARCHITECTURES_WITH_AUTO_COMPRESSION.append((OVModelForVisualCausalLM, "qwen3_vl", False))
         SUPPORTED_ARCHITECTURES_WITH_AUTO_COMPRESSION.append((OVModelForCausalLM, "hunyuan_v1_dense", False))
+
+    if is_transformers_version(">=", "4.57"):
+        SUPPORTED_ARCHITECTURES_WITH_AUTO_COMPRESSION.append(
+            (OVModelForFeatureExtraction, "qwen3_vl_embedding", False)
+        )
 
     if is_transformers_version("==", "4.57.6"):
         SUPPORTED_ARCHITECTURES_WITH_AUTO_COMPRESSION.append((OVModelForSpeechSeq2Seq, "qwen3_asr", True))
@@ -1168,7 +1184,7 @@ class OVWeightCompressionTest(unittest.TestCase):
             {"bits": 4, "group_size": 8, "ratio": 0.5},
             {
                 "decoder": {"int8": 40, "int4": 4},
-                "encoder": {"int8": 24, "int4": 4},
+                "encoder": {"int8": 46, "int4": 6},
             },
         ),
     ]
@@ -1486,11 +1502,11 @@ class OVWeightCompressionTest(unittest.TestCase):
     def test_ovmodel_default_ignored_scope(self, model_cls, model_type, expected_ignored_scope_per_model):
         with unittest.mock.patch.dict(
             "optimum.intel.openvino.configuration._DEFAULT_IGNORED_SCOPE_CONFIGS",
-            {MODEL_NAMES[model_type]: expected_ignored_scope_per_model},
+            {HUB_MODEL_NAMES[model_type]: expected_ignored_scope_per_model},
             clear=False,
         ):
             with TemporaryDirectory() as tmp_dir:
-                model_id = MODEL_NAMES[model_type]
+                model_id = HUB_MODEL_NAMES[model_type]
                 model = model_cls.from_pretrained(
                     model_id,
                     export=True,
@@ -1712,7 +1728,7 @@ class OVWeightCompressionTest(unittest.TestCase):
                         group_size=64,
                         num_samples=1,
                         scale_estimation=True,
-                        dataset="contextual",
+                        dataset="textvqa",
                         processor=model_id,
                     )
                 }
@@ -1859,8 +1875,8 @@ class OVPipelineQuantizationTest(unittest.TestCase):
                 num_samples=1,
                 processor=MODEL_NAMES["whisper"],
             ),
-            {"encoder": 14, "decoder": 22},
-            {"encoder": {"int8": 14}, "decoder": {"int8": 22}},
+            {"encoder": 26, "decoder": 22},
+            {"encoder": {"int8": 26}, "decoder": {"int8": 22}},
         ),
     ]
 
@@ -1875,7 +1891,7 @@ class OVPipelineQuantizationTest(unittest.TestCase):
                         "lm_model": dict(bits=8, weight_only=True),
                         "vision_embeddings_model": dict(bits=8, weight_only=False),
                     },
-                    dataset="contextual",
+                    dataset="textvqa",
                     num_samples=1,
                     default_config=dict(bits=8, sym=True, weight_only=True),
                 ),
@@ -1904,7 +1920,7 @@ class OVPipelineQuantizationTest(unittest.TestCase):
                             "lm_model": dict(
                                 bits=4,
                                 group_size=16,
-                                dataset="contextual",
+                                dataset="textvqa",
                                 num_samples=1,
                                 ratio=0.8,
                                 sensitivity_metric="mean_activation_magnitude",
@@ -2076,7 +2092,7 @@ class OVQuantizerQATest(unittest.TestCase):
             tokenizer = AutoTokenizer.from_pretrained(model_name)
             quantizer = OVQuantizer.from_pretrained(transformers_model, device=OPENVINO_DEVICE)
             calibration_dataset = quantizer.get_calibration_dataset(
-                "squadshifts",
+                "ludwigschmidt/squadshifts",
                 dataset_config_name="new_wiki",
                 preprocess_function=partial(preprocess_function, tokenizer=tokenizer),
                 num_samples=10,
