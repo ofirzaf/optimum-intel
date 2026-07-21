@@ -94,9 +94,10 @@ if is_diffusers_available():
 
 
 if TYPE_CHECKING:
+    from transformers.configuration_utils import PretrainedConfig
+
     from optimum.exporters.openvino.base import OpenVINOConfig
     from optimum.intel.openvino.configuration import OVConfig
-
 
 def _set_runtime_options(
     models_and_export_configs: Dict[
@@ -312,7 +313,6 @@ def export_pytorch(
 
         dummy_inputs = config.rename_ambiguous_inputs(dummy_inputs)
         dummy_inputs, dict_inputs = remove_none_from_dummy_inputs(dummy_inputs)
-        output_names = list(config.outputs.keys())
 
         # TorchScript used behind OpenVINO conversion. Optimum supports only return_dict=True models for patching,
         # while TorchScript do not support dictionary with values of mixed types (e.g. Tensor and None) in model input/output
@@ -388,6 +388,7 @@ def export_pytorch(
 
         ov_model.validate_nodes_and_infer_types()  # TODO: remove as unnecessary validation?
 
+        output_names = list(config.outputs.keys())
         for idx, out_tensor in enumerate(ov_model.outputs):
             if idx < len(output_names):
                 out_tensor.get_tensor().set_names({output_names[idx]})
@@ -922,13 +923,15 @@ def _add_eagle3_mode_to_rt_info(model: Model):
     return model
 
 
-def _add_dflash_mode_to_rt_info(model: Model, hf_config):
+def _add_dflash_mode_to_rt_info(model: Model, hf_config: "PretrainedConfig") -> Model:
     """
-    Add DFlash metadata.
+    Add DFlash metadata to DFlash draft model.
+
+    Marks model as DFlash draft model and adds DFlash configuration to the model including 
+    mask token id and target layer ids.
     """
     try:
         model.set_rt_info("True", ["dflash_mode"])
-        model.set_rt_info("committed_prefix", ["dflash", "cache_policy"])
         dflash_config = getattr(hf_config, "dflash_config", {})
         if "mask_token_id" in dflash_config:
             model.set_rt_info(str(dflash_config["mask_token_id"]), ["dflash", "mask_token_id"])
