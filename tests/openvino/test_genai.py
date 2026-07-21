@@ -623,7 +623,9 @@ class LLMPipelineWithSpeculativeDecodingTestCase(unittest.TestCase):
         ov_draft_model = draft_model(draft_model_path, "CPU")
         ov_speculative_pipe = LLMPipeline(main_model_path, OPENVINO_DEVICE, draft_model=ov_draft_model, **TEST_CONFIG)
         genai_speculative_output = str(
-            ov_speculative_pipe.generate(prompt, echo=True, apply_chat_template=False, ignore_eos=True, **self.GEN_KWARGS)
+            ov_speculative_pipe.generate(
+                prompt, echo=True, apply_chat_template=False, ignore_eos=True, **self.GEN_KWARGS
+            )
         )
         del ov_speculative_pipe
         del ov_draft_model
