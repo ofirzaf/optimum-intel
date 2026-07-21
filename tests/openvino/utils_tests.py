@@ -303,6 +303,7 @@ HUB_MODEL_NAMES = {
     "qwen3_5": "optimum-intel-internal-testing/tiny-random-qwen3.5",
     "qwen3_5_moe": "optimum-intel-internal-testing/tiny-random-qwen3.5-moe",
     "qwen3_asr": "optimum-intel-internal-testing/tiny-random-qwen3-asr",
+    "qwen3_dflash": "optimum-intel-internal-testing/tiny-random-qwen3-dflash",
     "rembert": "optimum-intel-internal-testing/tiny-random-rembert",
     "resnet": "optimum-intel-internal-testing/tiny-random-resnet",
     "roberta": "optimum-intel-internal-testing/tiny-random-roberta",
@@ -575,6 +576,7 @@ _ARCHITECTURES_TO_EXPECTED_INT8 = {
     "lfm2_moe": {"model": 46},
     "hunyuan_v1_dense": {"model": 32},
     "qwen3_eagle3": {"model": 20},
+    "qwen3_dflash": {"model": 30},
     "qwen3_vl_eagle3": {"model": 18},
     "qwen3_next": {"model": 100},
     "gemma3n": {
