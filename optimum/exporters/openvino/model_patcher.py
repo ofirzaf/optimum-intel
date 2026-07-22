@@ -19,7 +19,7 @@ import math
 import types
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -34,7 +34,6 @@ from transformers.modeling_outputs import (
     BaseModelOutputWithPast,
     BaseModelOutputWithPooling,
 )
-from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 from transformers.models.llama.configuration_llama import LlamaConfig
 from transformers.models.llama.modeling_llama import (
     LlamaAttention,
@@ -98,10 +97,6 @@ else:
     Qwen3Attention = object
     Qwen3RMSNorm = object
     Qwen3RotaryEmbedding = object
-
-if TYPE_CHECKING:
-    from transformers.cache_utils import Cache
-    from transformers.modeling_utils import PreTrainedModel
 
 
 if is_transformers_version(">=", "4.54"):
@@ -8249,6 +8244,8 @@ class Qwen3DFlashAttention(Qwen3Attention):
         cache_position: Optional[torch.LongTensor] = None,
         **kwargs: Unpack[TransformersKwargs],
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+    
         bsz, q_len = hidden_states.shape[:-1]
         ctx_len = target_hidden.shape[1]
 
