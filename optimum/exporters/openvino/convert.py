@@ -99,6 +99,7 @@ if TYPE_CHECKING:
     from optimum.exporters.openvino.base import OpenVINOConfig
     from optimum.intel.openvino.configuration import OVConfig
 
+
 def _set_runtime_options(
     models_and_export_configs: Dict[
         str,

@@ -33,7 +33,6 @@ from transformers.modeling_outputs import (
     BaseModelOutput,
     BaseModelOutputWithPast,
     BaseModelOutputWithPooling,
-    CausalLMOutputWithPast,
 )
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 from transformers.models.llama.configuration_llama import LlamaConfig
@@ -104,7 +103,6 @@ if TYPE_CHECKING:
     from transformers.cache_utils import Cache
     from transformers.modeling_utils import PreTrainedModel
 
-    from optimum.exporters.onnx.config import OnnxConfig
 
 if is_transformers_version(">=", "4.54"):
     from transformers.utils import TransformersKwargs
