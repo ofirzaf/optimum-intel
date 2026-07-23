@@ -8245,7 +8245,7 @@ class Qwen3DFlashAttention(Qwen3Attention):
         **kwargs: Unpack[TransformersKwargs],
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
-    
+
         bsz, q_len = hidden_states.shape[:-1]
         ctx_len = target_hidden.shape[1]
 
