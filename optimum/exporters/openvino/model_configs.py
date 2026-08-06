@@ -470,6 +470,7 @@ class Qwen3OpenVINOConfig(TextDecoderWithPositionIdsOpenVINOConfig):
             common_inputs["inputs_embeds"] = {0: "batch_size", 1: "block_size"}
             common_inputs["hidden_states"] = {0: "batch_size", 1: "context_length"}
             common_inputs["position_ids"] = {0: "batch_size", 1: "context_length + block_size"}
+            common_inputs["token_type_ids"] = {0: "batch_size", 1: "block_size"}
             if self.use_past_in_inputs:
                 mask_length = "past_sequence_length + context_length + block_size"
             else:
@@ -499,7 +500,13 @@ class Qwen3OpenVINOConfig(TextDecoderWithPositionIdsOpenVINOConfig):
     def overwrite_shape_and_generate_input(
         self, dummy_input_gen: DummyInputGenerator, input_name: str, framework: str, input_shapes: dict
     ):
-        if self.dflash and input_name in {"inputs_embeds", "hidden_states", "position_ids", "attention_mask"}:
+        if self.dflash and input_name in {
+            "inputs_embeds",
+            "hidden_states",
+            "position_ids",
+            "attention_mask",
+            "token_type_ids",
+        }:
             sequence_length = dummy_input_gen.sequence_length
             block_length = sequence_length + 1
             if input_name == "inputs_embeds":
@@ -508,6 +515,8 @@ class Qwen3OpenVINOConfig(TextDecoderWithPositionIdsOpenVINOConfig):
                 dummy_input_gen.sequence_length = sequence_length
             elif input_name == "position_ids":
                 dummy_input_gen.sequence_length = sequence_length + block_length
+            elif input_name == "token_type_ids":
+                dummy_input_gen.sequence_length = block_length
             else:
                 if self.use_past_in_inputs:
                     dummy_input_gen.sequence_length = sequence_length * 2 + block_length
@@ -526,7 +535,7 @@ class Qwen3OpenVINOConfig(TextDecoderWithPositionIdsOpenVINOConfig):
             for axes in inputs_or_outputs.values():
                 for axis, name in axes.items():
                     if name == "past_sequence_length + sequence_length":
-                        axes[axis] = "past_sequence_length + context_length"
+                        axes[axis] = "past_sequence_length + context_length + block_size"
 
 
 @register_in_tasks_manager(
