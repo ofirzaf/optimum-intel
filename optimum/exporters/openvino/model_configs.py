@@ -525,6 +525,11 @@ class Qwen3OpenVINOConfig(TextDecoderWithPositionIdsOpenVINOConfig):
             dummy_input = dummy_input_gen.generate(
                 input_name, framework=framework, int_dtype=self.int_dtype, float_dtype=self.float_dtype
             )
+            if input_name == "token_type_ids":
+                if framework == "pt":
+                    dummy_input.fill_(1)
+                else:
+                    dummy_input.fill(1)
             dummy_input_gen.sequence_length = sequence_length
             return dummy_input
         return super().overwrite_shape_and_generate_input(dummy_input_gen, input_name, framework, input_shapes)

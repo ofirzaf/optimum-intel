@@ -8196,14 +8196,17 @@ def _dflash_attention_mask(
         return full_mask
 
     # Match Gemma4's full-cache policy: enforce the window in the mask rather
-    # than evicting cache rows. DFlash guarantees q_len <= sliding_window, so
-    # the final proposal block remains bidirectional without special handling.
+    # than evicting cache rows. Proposal K/V rows are always the final q_len
+    # positions, and all queries belong to that block, so a shape-derived
+    # suffix mask restores bidirectional proposal attention without requiring
+    # token-type values in the SDPA path.
     sliding_mask = full_mask.clone()
     query_positions = torch.arange(q_len, device=device).unsqueeze(1) + (kv_len - q_len)
     key_positions = torch.arange(kv_len, device=device).unsqueeze(0)
     beyond_window = (query_positions - key_positions) >= sliding_window
     sliding_mask = sliding_mask.masked_fill(beyond_window[None, None, :, :], torch.finfo(dtype).min)
-    return sliding_mask
+    proposal_keys = torch.arange(kv_len, device=device) >= kv_len - q_len
+    return sliding_mask.masked_fill(proposal_keys[None, None, None, :], 0.0)
 
 
 # adopted from https://github.com/z-lab/dflash/blob/main/dflash/model.py#L185
