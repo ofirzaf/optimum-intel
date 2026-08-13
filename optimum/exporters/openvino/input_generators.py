@@ -237,7 +237,11 @@ class Eagle3DummyGenerator(DummyInputGenerator):
         self.sequence_length = sequence_length
         self.hidden_size = normalized_config.hidden_size
         dflash_config = getattr(normalized_config.config, "dflash_config", {}) or {}
-        self.num_hidden_state_layers = len(dflash_config.get("target_layer_ids", [])) or 3
+        # Native Muse-Glimmer-Assistant configs keep target layers at top level; Qwen drafts nest them.
+        target_layer_ids = dflash_config.get(
+            "target_layer_ids", getattr(normalized_config.config, "target_layer_ids", [])
+        )
+        self.num_hidden_state_layers = len(target_layer_ids) or 3
 
     def generate(self, input_name: str, framework: str = "pt", int_dtype: str = "int64", float_dtype: str = "fp32"):
         # hidden_states is provided as a concatenation of hidden-layer outputs from the main model

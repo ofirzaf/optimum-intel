@@ -154,6 +154,7 @@ def _save_model(
         "qwen3_5_text",
         "qwen3_5_moe_text",
         "gemma4",
+        "muse_glimmer",
     }:
         add_hidden_states_rt_info(source_model, model, config)
 
@@ -945,10 +946,14 @@ def _add_dflash_mode_to_rt_info(model: Model, hf_config: "PretrainedConfig") -> 
     try:
         model.set_rt_info("True", ["dflash_mode"])
         dflash_config = getattr(hf_config, "dflash_config", {})
-        if "mask_token_id" in dflash_config:
-            model.set_rt_info(str(dflash_config["mask_token_id"]), ["dflash", "mask_token_id"])
-        if "target_layer_ids" in dflash_config:
-            model.set_rt_info(",".join(map(str, dflash_config["target_layer_ids"])), ["dflash", "target_layer_ids"])
+        dflash_config = dflash_config if isinstance(dflash_config, dict) else {}
+        # Native Muse-Glimmer-Assistant configs keep these fields at top level; Qwen drafts nest them.
+        mask_token_id = dflash_config.get("mask_token_id", getattr(hf_config, "mask_token_id", None))
+        target_layer_ids = dflash_config.get("target_layer_ids", getattr(hf_config, "target_layer_ids", None))
+        if mask_token_id is not None:
+            model.set_rt_info(str(mask_token_id), ["dflash", "mask_token_id"])
+        if target_layer_ids:
+            model.set_rt_info(",".join(map(str, target_layer_ids)), ["dflash", "target_layer_ids"])
     except Exception:
         pass
 
