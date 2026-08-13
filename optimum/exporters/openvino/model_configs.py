@@ -2341,6 +2341,17 @@ class MuseGlimmerAssistantOpenVINOConfig(DFlashOpenVINOConfigMixin, MuseGlimmerT
             )
         )
 
+    def generate_dummy_inputs(self, framework: str = "pt", **kwargs):
+        config = self._config
+        if hasattr(config, "vocab_size"):
+            return super().generate_dummy_inputs(framework=framework, **kwargs)
+        # DummyTextInputGenerator requires vocab_size although Muse-Glimmer-assistant
+        # doesn't have vocab_size in config and doesn't require input_ids.
+        config.vocab_size = 1
+        dummy_inputs = super().generate_dummy_inputs(framework=framework, **kwargs)
+        del config.vocab_size
+        return dummy_inputs
+
 
 @register_in_tasks_manager("muse_glimmer", *["image-text-to-text"], library_name="transformers")
 class MuseGlimmerOpenVINOConfig(BaseVLMOpenVINOConfig):
