@@ -8175,6 +8175,7 @@ def _dflash_apply_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=1):
 def _dflash_attention_mask(
     query_states: torch.Tensor,
     key_states: torch.Tensor,
+    token_type_ids: Optional[torch.Tensor],
     sliding_window: Optional[int],
     attention_mask: Optional[torch.Tensor] = None,
 ) -> Optional[torch.Tensor]:
@@ -8182,31 +8183,43 @@ def _dflash_attention_mask(
     kv_len = key_states.shape[-2]
     device = query_states.device
     dtype = query_states.dtype
+    min_dtype = torch.finfo(dtype).min
 
-    # DFlash block queries attend over the complete valid K/V sequence rather
-    # than a causal prefix.
+    # Start from normal causal attention. DFlash token types describe current
+    # K/V rows: type 0 is the target-hidden delta and the type-1 suffix is the
+    # seed-plus-proposal block. Unmasking that suffix makes the proposal block
+    # bidirectional while cached past and delta rows remain ordinary context.
+    query_positions = torch.arange(kv_len - q_len, kv_len, device=device)
+    key_positions = torch.arange(kv_len, device=device)
+    future_positions = key_positions.unsqueeze(0) > query_positions.unsqueeze(1)
     full_mask = torch.zeros((q_len, kv_len), dtype=dtype, device=device)
+    full_mask = full_mask.masked_fill(future_positions, min_dtype)
     full_mask = full_mask[None, None, :, :].expand(query_states.shape[0], 1, -1, -1)
 
     if attention_mask is not None:
         padding_mask = attention_mask[:, :, -q_len:, -kv_len:].to(dtype=dtype, device=device)
         full_mask = full_mask + padding_mask
 
-    if sliding_window is None:
-        return full_mask
+    if sliding_window is not None:
+        # Keep the complete cache and enforce SWA only in the mask.
+        beyond_window = (query_positions.unsqueeze(1) - key_positions.unsqueeze(0)) >= sliding_window
+        full_mask = full_mask.masked_fill(beyond_window[None, None, :, :], min_dtype)
 
-    # Match Gemma4's full-cache policy: enforce the window in the mask rather
-    # than evicting cache rows. Proposal K/V rows are always the final q_len
-    # positions, and all queries belong to that block, so a shape-derived
-    # suffix mask restores bidirectional proposal attention without requiring
-    # token-type values in the SDPA path.
-    sliding_mask = full_mask.clone()
-    query_positions = torch.arange(q_len, device=device).unsqueeze(1) + (kv_len - q_len)
-    key_positions = torch.arange(kv_len, device=device).unsqueeze(0)
-    beyond_window = (query_positions - key_positions) >= sliding_window
-    sliding_mask = sliding_mask.masked_fill(beyond_window[None, None, :, :], torch.finfo(dtype).min)
-    proposal_keys = torch.arange(kv_len, device=device) >= kv_len - q_len
-    return sliding_mask.masked_fill(proposal_keys[None, None, None, :], 0.0)
+    if token_type_ids is not None:
+        # token_type_ids covers current K/V only. Cached past is an implicit
+        # type-0 prefix, so left-pad the map to the full key length.
+        key_token_types = torch.nn.functional.pad(
+            token_type_ids,
+            (kv_len - token_type_ids.shape[-1], 0),
+            value=0,
+        )
+        query_token_types = key_token_types[:, -q_len:]
+        same_proposal_block = (query_token_types == 1).unsqueeze(-1) & (key_token_types == 1).unsqueeze(-2)
+        return full_mask.masked_fill(same_proposal_block[:, None, :, :], 0.0)
+
+    # Preserve source-model behavior for callers that omit token types.
+    proposal_keys = key_positions >= kv_len - q_len
+    return full_mask.masked_fill(proposal_keys[None, None, None, :], 0.0)
 
 
 # adopted from https://github.com/z-lab/dflash/blob/main/dflash/model.py#L185
@@ -8224,6 +8237,7 @@ class Qwen3DFlashAttention(Qwen3Attention):
         target_hidden: torch.Tensor,
         position_embeddings: Tuple[torch.Tensor, torch.Tensor],
         attention_mask: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.Tensor] = None,
         past_key_values: Optional[Cache] = None,
         cache_position: Optional[torch.LongTensor] = None,
         **kwargs: Unpack[TransformersKwargs],
@@ -8256,6 +8270,7 @@ class Qwen3DFlashAttention(Qwen3Attention):
         attention_mask = _dflash_attention_mask(
             query_states,
             key_states,
+            token_type_ids,
             self.sliding_window,
             attention_mask,
         )
@@ -8295,6 +8310,7 @@ class Qwen3DFlashDecoderLayer(nn.Module):
         target_hidden: torch.Tensor,
         hidden_states: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         past_key_value: Optional[Cache] = None,
         output_attentions: Optional[bool] = False,
@@ -8309,6 +8325,7 @@ class Qwen3DFlashDecoderLayer(nn.Module):
             hidden_states=hidden_states,
             target_hidden=target_hidden,
             attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
             position_ids=position_ids,
             past_key_values=past_key_value,
             output_attentions=output_attentions,
@@ -8352,6 +8369,7 @@ class Qwen3DFlashDraftModel(Qwen3PreTrainedModel):
         self,
         position_ids: torch.LongTensor,
         attention_mask: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.Tensor] = None,
         noise_embedding: Optional[torch.Tensor] = None,
         hidden_states: Optional[torch.Tensor] = None,
         past_key_values: Optional[Cache] = None,
@@ -8391,6 +8409,7 @@ class Qwen3DFlashDraftModel(Qwen3PreTrainedModel):
                 hidden_states=noise_states,
                 target_hidden=target_hidden,
                 attention_mask=attention_mask,
+                token_type_ids=token_type_ids,
                 position_ids=position_ids,
                 past_key_value=past_key_values,
                 use_cache=use_cache,
@@ -8431,6 +8450,7 @@ class Qwen3DFlashForCausalLM(Qwen3DFlashDraftModel, GenerationMixin):
             noise_embedding=inputs_embeds,
             position_ids=position_ids,
             attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
             past_key_values=past_key_values,
             use_cache=use_cache,
             **kwargs,
