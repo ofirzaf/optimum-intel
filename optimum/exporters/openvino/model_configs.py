@@ -470,7 +470,6 @@ class Qwen3OpenVINOConfig(TextDecoderWithPositionIdsOpenVINOConfig):
             common_inputs["inputs_embeds"] = {0: "batch_size", 1: "block_size"}
             common_inputs["hidden_states"] = {0: "batch_size", 1: "context_length"}
             common_inputs["position_ids"] = {0: "batch_size", 1: "context_length + block_size"}
-            common_inputs["token_type_ids"] = {0: "batch_size", 1: "context_length + block_size"}
             if self.use_past_in_inputs:
                 mask_length = "past_sequence_length + context_length + block_size"
             else:
@@ -505,7 +504,6 @@ class Qwen3OpenVINOConfig(TextDecoderWithPositionIdsOpenVINOConfig):
             "hidden_states",
             "position_ids",
             "attention_mask",
-            "token_type_ids",
         }:
             sequence_length = dummy_input_gen.sequence_length
             block_length = sequence_length + 1
@@ -515,8 +513,6 @@ class Qwen3OpenVINOConfig(TextDecoderWithPositionIdsOpenVINOConfig):
                 dummy_input_gen.sequence_length = sequence_length
             elif input_name == "position_ids":
                 dummy_input_gen.sequence_length = sequence_length + block_length
-            elif input_name == "token_type_ids":
-                dummy_input_gen.sequence_length = sequence_length + block_length
             else:
                 if self.use_past_in_inputs:
                     dummy_input_gen.sequence_length = sequence_length * 2 + block_length
@@ -525,12 +521,6 @@ class Qwen3OpenVINOConfig(TextDecoderWithPositionIdsOpenVINOConfig):
             dummy_input = dummy_input_gen.generate(
                 input_name, framework=framework, int_dtype=self.int_dtype, float_dtype=self.float_dtype
             )
-            if input_name == "token_type_ids":
-                if framework == "pt":
-                    dummy_input.zero_()
-                else:
-                    dummy_input.fill(0)
-                dummy_input[..., sequence_length:] = 1
             dummy_input_gen.sequence_length = sequence_length
             return dummy_input
         return super().overwrite_shape_and_generate_input(dummy_input_gen, input_name, framework, input_shapes)
